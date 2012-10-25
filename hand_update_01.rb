@@ -5,7 +5,7 @@
 # ライブラリ等指定
 $LOAD_PATH << File.dirname(__FILE__)
 require 'Main'
-require 'libs'
+require 'baselibs'
 
 
 if nil==ARGV[0] then

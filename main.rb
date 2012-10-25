@@ -3,9 +3,9 @@
 
 class Main
 
-  # ƒ‰ƒCƒuƒ‰ƒŠ“™w’è
+  # ãƒ©ã‚¤ãƒ–ãƒ©ãƒªç­‰æŒ‡å®š
   $LOAD_PATH << File.dirname(__FILE__)
-  require 'libs'
+  require 'baselibs'
   require 'net/ssh'
   require 'net/scp'
   require 'net/ftp'
@@ -13,27 +13,14 @@ class Main
   require 'find'
   require 'stricts'
   require 'yaml'
-  #require 'validate_cf'
+  require 'libs'
 
 
-  # ‰Šúˆ—
-  def initialize
+  # åˆæœŸå‡¦ç†
+  def initialize(params)
     logging("START : #{self.class.to_s}::#{__method__.to_s}" ,$info)
-    
-    # ƒJƒŒƒ“ƒgƒfƒBƒŒƒNƒgƒŠ‚ğ•ÏX
-    if nil == ENV['OCRA_EXECUTABLE'] then 
-      Dir.chdir(File.dirname(__FILE__))
-    else
-      Dir.chdir(File.dirname(ENV['OCRA_EXECUTABLE']))
-    end
-    
-    # ƒpƒ‰ƒ[ƒ^İ’è
-    params = YAML.load_file("./params.yml")
-    
-    #v_cf_proc = ValidateCf.new(params)
-    
-    #valid_flg = v_cf_proc.exec_validate
-    
+
+    # ãƒ‘ãƒ©ãƒ¡ãƒ¼ã‚¿è¨­å®š
     $host = params["host"]
     $proto = params["proto"]
     $ssh_user = params["ssh_user"]
@@ -46,7 +33,7 @@ class Main
     @Work_dir_path = check_dir(params["work_dir"])
     
      
-    # cpƒRƒ}ƒ“ƒhC³(sudo)
+    # cpã‚³ãƒãƒ³ãƒ‰ä¿®æ­£(sudoæ™‚)
     if $sudo_flg == 1 then
       @Cp_cmd_exe = make_sudo($sudo_pass , $Cp_cmd) if $sudo_flg == 1
     elsif $sudo_flg == 0 then
@@ -57,14 +44,14 @@ class Main
   end
 
 
-  # ƒo[ƒWƒ‡ƒ“ƒAƒbƒv‘O’iŠKì‹Æ
+  # ãƒãƒ¼ã‚¸ãƒ§ãƒ³ã‚¢ãƒƒãƒ—å‰æ®µéšä½œæ¥­
   def pre_ver_up
     logging("START : #{self.class.to_s}::#{__method__.to_s}" ,$info)
 
-    # ‚Ç‚Ç‚ñ‚Æ‚Ózipƒtƒ@ƒCƒ‹î•ñæ“¾
+    # ã©ã©ã‚“ã¨ãµzipãƒ•ã‚¡ã‚¤ãƒ«æƒ…å ±å–å¾—
     @new_ddtf_zip = File.expand_path(ARGV[0])
 
-    # ‹¤’Êˆ—
+    # å…±é€šå‡¦ç†(ã‚¯ãƒ©ã‚¤ã‚¢ãƒ³ãƒˆä½œæ¥­ãƒ‡ã‚£ãƒ¬ã‚¯ãƒˆãƒªä½œæˆï¼‰
     begin
       Dir::mkdir($Client_work_dir)
     rescue Errno::EEXIST
@@ -77,236 +64,264 @@ class Main
       logging("\"#{File.expand_path($Client_zip_dir)}\" is already exists",$warn)
     end
 
-    # ssh,ftpˆ—•ªŠò
+
+    # ssh=0 , ftp=1
+    proto_flg = ""
     case $proto.downcase
     when "ssh"
-      self.pre_ver_up_ssh
+      proto_flg = "0";
     when "ftp"
-      self.pre_ver_up_ftp
+      proto_flg = "1";
     end
-    
+
+    # ã‚µãƒ¼ãƒå´ä½œæ¥­ãƒ•ã‚©ãƒ«ãƒ€ä½œæˆ/ãƒãƒƒã‚¯ã‚¢ãƒƒãƒ—
+    if proto_flg == "0" then
+      @srv_working_dir_path = ''
+      @srv_backup_dir_path = ''
+      @srv_newver_dir_path = ''
+      @srv_zip_path = ''
+
+      # SSHæ¥ç¶šï¼ˆä½œæ¥­ãƒ•ã‚©ãƒ«ãƒ€ä½œæˆãƒ»ãƒãƒƒã‚¯ã‚¢ãƒƒãƒ—ï¼‰
+      Net::SSH.start($host, $ssh_user, :password => $ssh_pass) do |ssh|
+      
+        # ä»Šä½œæ¥­ç”¨ãƒ•ã‚©ãƒ«ãƒ€ã‚’ä½œæˆ
+        @srv_working_dir_path = check_dir(@Work_dir_path + delete_crlf(invoke(ssh , "#{$Date}")))
+        invoke(ssh, "#{$Mkdir_cmd} #{@srv_working_dir_path}" ) 
+        
+        # ãƒãƒƒã‚¯ã‚¢ãƒƒãƒ—ç”¨ãƒ•ã‚©ãƒ«ãƒ€ã€æ–°ãƒãƒ¼ã‚¸ãƒ§ãƒ³ç”¨ãƒ•ã‚©ãƒ«ãƒ€ã‚’ä½œæˆ
+        @srv_backup_dir_path = "#{@srv_working_dir_path}backup/"
+        @srv_newver_dir_path = "#{@srv_working_dir_path}newver/"
+        invoke(ssh, "#{$Mkdir_cmd} #{@srv_backup_dir_path}" )
+        invoke(ssh, "#{$Mkdir_cmd} #{@srv_newver_dir_path}" )
+        
+        # ãƒãƒƒã‚¯ã‚¢ãƒƒãƒ—å®Ÿè¡Œ(ãƒ¡ã‚¤ãƒ³ãƒ‡ã‚£ãƒ¬ã‚¯ãƒˆãƒªã€ã‚³ãƒ³ãƒ•ã‚£ã‚°ï¼‰
+        invoke(ssh, "#{$Comp_tar_cmd} #{@srv_backup_dir_path}dodontoF.tar #{@Ddtf_dir_path}*" )
+        invoke(ssh, "#{@Cp_cmd_exe} #{@Ddtf_dir_path}src_ruby/config.rb #{@srv_backup_dir_path}config.rb" )
+      end
+    elsif proto_flg == "1" then
+      # ç„¡ã—
+    end
+
+    # zipãƒ•ã‚¡ã‚¤ãƒ«å±•é–‹
+    if proto_flg == "0" then
+      # SCPæ¥ç¶šï¼ˆæ–°ãƒãƒ¼ã‚¸ãƒ§ãƒ³ã®zipãƒ•ã‚¡ã‚¤ãƒ«ã‚’é€ä¿¡ï¼‰
+      Net::SCP.start($host, $ssh_user, :password => $ssh_pass) do|scp|
+        @srv_zip_path =  "#{@srv_newver_dir_path}#{File.basename(@new_ddtf_zip)}"
+        channel = scp.upload(@new_ddtf_zip , @srv_zip_path )
+        channel.wait
+      end
+      # SSHæ¥ç¶šï¼ˆzipè§£å‡ï¼‰
+      Net::SSH.start($host, $ssh_user, :password => $ssh_pass) do |ssh|
+        # zipè§£å‡
+        invoke_nomsg(ssh, "#{$Exp_zip_cmd} #{@srv_newver_dir_path} #{@srv_zip_path}" )
+      end
+    elsif proto_flg == "1" then
+      # ã‚¯ãƒ©ã‚¤ã‚¢ãƒ³ãƒˆã§zipã‚’è§£å‡
+      ore_unzip(@new_ddtf_zip , $Client_zip_dir)
+    end
+
+
+
+    # æ–°æ—§ã‚³ãƒ³ãƒ•ã‚£ã‚°æº–å‚™
+    if proto_flg == "0" then
+      # æ–°æ—§ã‚³ãƒ³ãƒ•ã‚£ã‚°å–å¾—
+      Net::SCP.start($host, $ssh_user, :password => $ssh_pass) do|scp|
+        channel = scp.download( "#{@srv_newver_dir_path}#{$Def_ddtf_path}#{$Conf_file_from_ddtf_path}" , "#{$Client_work_dir}01_new_config.rb" )
+        channel.wait
+        channel = scp.download( "#{@srv_backup_dir_path}config.rb" , "#{$Client_work_dir}01_old_config.rb" )
+        channel.wait
+      end
+    elsif proto_flg == "1" then
+      # ç¾è¡Œã®ã‚³ãƒ³ãƒ•ã‚£ã‚°ã‚’å–å¾—
+      Net::FTP.open($host, $ftp_user, $ftp_pass) do |ftp|
+        ftp.passive = true
+        ftp.getbinaryfile( "#{@Ddtf_dir_path}src_ruby/config.rb" , "#{$Client_work_dir}01_old_config.rb" )      
+        ftp.close
+      end
+      # æ–°ã‚³ãƒ³ãƒ•ã‚£ã‚°ã®é››å½¢ã‚’ã‚³ãƒ”ãƒ¼
+      FileUtils.copy( "#{$Client_zip_dir}#{$Def_ddtf_path}#{$Conf_file_from_ddtf_path}" , "#{$Client_work_dir}01_new_config.rb" )
+    end
+
+
+    # å–å¾—ã—ãŸã‚³ãƒ³ãƒ•ã‚£ã‚°ã‚’è§£æï¼ˆå…±é€šï¼‰
+    rbconf_params = parse_rbconf("#{$Client_work_dir}01_old_config.rb")
+
+
+    # ãã®ä»–æƒ…å ±ãƒãƒƒã‚¯ã‚¢ãƒƒãƒ—
+    if proto_flg == "0" then
+      # SSHæ¥ç¶šï¼ˆãƒ­ã‚°ã‚¤ãƒ³ãƒ¡ãƒƒã‚»ãƒ¼ã‚¸ã€uploadImageSpace,saveDataãƒãƒƒã‚¯ã‚¢ãƒƒãƒ—ï¼‰
+      Net::SSH.start($host, $ssh_user, :password => $ssh_pass) do |ssh|
+        open( "#{$Client_work_dir}01_old_config.rb" , "r:#{$enc_str}" ) { |file|
+          # ãƒ­ã‚°ã‚¤ãƒ³ãƒ¡ãƒƒã‚»ãƒ¼ã‚¸ãƒãƒƒã‚¯ã‚¢ãƒƒãƒ—
+          invoke(ssh, "#{@Cp_cmd_exe} #{@Ddtf_dir_path}#{rbconf_params['login_message_file']} #{@srv_backup_dir_path}#{rbconf_params['login_message_file']}" )
+          # imageUploadSpaceãƒãƒƒã‚¯ã‚¢ãƒƒãƒ—
+          invoke(ssh, "#{$Cd_cmd} #{@Ddtf_dir_path} ; #{$Comp_tar_cmd} #{@srv_backup_dir_path}img.tar #{rbconf_params['img_dir_path']}/* ")
+          # saveDataãƒãƒƒã‚¯ã‚¢ãƒƒãƒ—
+          invoke(ssh, "#{$Cd_cmd} #{@Ddtf_dir_path} ; #{$Comp_tar_cmd} #{@srv_backup_dir_path}save.tar #{rbconf_params['save_dir_path']}/* ")
+        }
+      end
+    elsif proto_flg == "1" then
+      # ãªã—
+    end
+
+
+    # å¼•ãç¶™ãæƒ…å ±å–å¾—
+    if proto_flg == "0" then
+      Net::SCP.start($host, $ssh_user, :password => $ssh_pass) do|scp|
+        channel = scp.download( "#{@srv_backup_dir_path}#{rbconf_params['login_message_file']}" , "#{$Client_work_dir}#{rbconf_params['login_message_file']}" )
+        channel.wait
+      end
+    elsif proto_flg == "1" then
+      Net::FTP.open($host, $ftp_user, $ftp_pass) do |ftp|
+        ftp.passive = true
+        ftp.gettextfile( "#{@Ddtf_dir_path}#{rbconf_params['login_message_file']}" , "#{$Client_work_dir}#{rbconf_params['login_message_file']}" )      
+        ftp.close
+      end
+    end
+
+    # æƒ…å ±é€£æºãƒ•ã‚¡ã‚¤ãƒ«ä½œæˆ
+    if proto_flg == "0" then
+      File.open("#{$Client_work_dir}working.yml" , "w:#{$enc_str}" ) do|f|
+        f.puts "srv_working_dir: #{@srv_working_dir_path}" 
+        f.puts "login_message_file: #{rbconf_params['login_message_file']}"
+        f.puts "status: yet"
+        f.close
+      end
+    elsif proto_flg == "1" then
+      File.open("#{$Client_work_dir}working.yml" , "w:#{$enc_str}" ) do|f|
+        f.puts "login_message_file: #{rbconf_params['login_message_file']}"
+        f.puts "status: yet"
+        f.close
+      end
+    end
 
     logging("END   : #{self.class.to_s}::#{__method__.to_s}" ,$info)
   end
 
 
-  # ƒo[ƒWƒ‡ƒ“ƒAƒbƒvì‹Æ
+
+  # ãƒãƒ¼ã‚¸ãƒ§ãƒ³ã‚¢ãƒƒãƒ—ä½œæ¥­
   def ver_up
     logging("START : #{self.class.to_s}::#{__method__.to_s}" ,$info)
-    # ssh,ftpˆ—•ªŠò
+    # ssh=0 , ftp=1
+    proto_flg = ""
     case $proto.downcase
     when "ssh"
-      self.ver_up_ssh
+      proto_flg = "0";
     when "ftp"
-      self.ver_up_ftp
-    end
-    logging("END   : #{self.class.to_s}::#{__method__.to_s}" ,$info)
-  end
-
-
-
-  # –‘Oˆ—Às(SSH)
-  def pre_ver_up_ssh
-    logging("START : #{self.class.to_s}::#{__method__.to_s}" ,$info)
-
-    @srv_working_dir_path = ''
-    @srv_backup_dir_path = ''
-    @srv_newver_dir_path = ''
-    @srv_zip_path = ''
-
-    # SSHÚ‘±iì‹ÆƒtƒHƒ‹ƒ_ì¬EƒoƒbƒNƒAƒbƒvj
-    Net::SSH.start($host, $ssh_user, :password => $ssh_pass) do |ssh|
-    
-      # ¡ì‹Æ—pƒtƒHƒ‹ƒ_‚ğì¬
-      @srv_working_dir_path = check_dir(@Work_dir_path + delete_crlf(invoke(ssh , "#{$Date}")))
-      invoke(ssh, "#{$Mkdir_cmd} #{@srv_working_dir_path}" ) 
-      
-      # ƒoƒbƒNƒAƒbƒv—pƒtƒHƒ‹ƒ_AVƒo[ƒWƒ‡ƒ“—pƒtƒHƒ‹ƒ_‚ğì¬
-      @srv_backup_dir_path = "#{@srv_working_dir_path}backup/"
-      @srv_newver_dir_path = "#{@srv_working_dir_path}newver/"
-      invoke(ssh, "#{$Mkdir_cmd} #{@srv_backup_dir_path}" )
-      invoke(ssh, "#{$Mkdir_cmd} #{@srv_newver_dir_path}" )
-      
-      # ƒoƒbƒNƒAƒbƒvÀs(ƒƒCƒ“ƒfƒBƒŒƒNƒgƒŠAƒRƒ“ƒtƒBƒOj
-      invoke(ssh, "#{$Comp_tar_cmd} #{@srv_backup_dir_path}dodontoF.tar #{@Ddtf_dir_path}*" )
-      invoke(ssh, "#{@Cp_cmd_exe} #{@Ddtf_dir_path}src_ruby/config.rb #{@srv_backup_dir_path}config.rb" )
-    end
-
-    # SCPÚ‘±iVƒo[ƒWƒ‡ƒ“‚Ìzipƒtƒ@ƒCƒ‹‚ğ‘—Mj
-    Net::SCP.start($host, $ssh_user, :password => $ssh_pass) do|scp|
-      @srv_zip_path =  "#{@srv_newver_dir_path}#{File.basename(@new_ddtf_zip)}"
-      channel = scp.upload(@new_ddtf_zip , @srv_zip_path )
-      channel.wait
-    end
-
-    # SSHÚ‘±izip‰ğ“€j
-    Net::SSH.start($host, $ssh_user, :password => $ssh_pass) do |ssh|
-      # zip‰ğ“€
-      invoke_nomsg(ssh, "#{$Exp_zip_cmd} #{@srv_newver_dir_path} #{@srv_zip_path}" )
-    end
-
-    # SCPÚ‘±iV‹ŒƒRƒ“ƒtƒBƒO—Œ`j
-    Net::SCP.start($host, $ssh_user, :password => $ssh_pass) do|scp|
-      channel = scp.download( "#{@srv_newver_dir_path}#{$Def_ddtf_path}#{$Conf_file_from_ddtf_path}" , "#{$Client_work_dir}01_new_config.rb" )
-      channel.wait
-      channel = scp.download( "#{@srv_backup_dir_path}config.rb" , "#{$Client_work_dir}01_old_config.rb" )
-      channel.wait
+      proto_flg = "1";
     end
     
 
-    # SSHÚ‘±iƒƒOƒCƒ“ƒƒbƒZ[ƒWAuploadImageSpace,saveDataƒoƒbƒNƒAƒbƒvj
-    Net::SSH.start($host, $ssh_user, :password => $ssh_pass) do |ssh|
-      open( "#{$Client_work_dir}01_old_config.rb" , "r:#{$enc_str}" ) { |file|
-        lines = file.readlines
-        # ƒƒOƒCƒ“ƒƒbƒZ[ƒWƒoƒbƒNƒAƒbƒv
-        @login_message_file = lines.find{|elem| /^\$loginMessageFile.*/ =~ elem}.split("=")[1]
-        @login_message_file = trim_rbstr(@login_message_file)
-        invoke(ssh, "#{@Cp_cmd_exe} #{@Ddtf_dir_path}#{@login_message_file} #{@srv_backup_dir_path}#{@login_message_file}" )
-
-        # imageUploadSpaceƒoƒbƒNƒAƒbƒv
-        img_dir_path = lines.find{|elem| /^\$imageUploadDir.*/ =~ elem}.split("=")[1]
-        img_dir_path = trim_rbstr(img_dir_path)
-        invoke(ssh, "#{$Cd_cmd} #{@Ddtf_dir_path} ; #{$Comp_tar_cmd} #{@srv_backup_dir_path}img.tar #{img_dir_path}/* ")
-
-        # saveDataƒoƒbƒNƒAƒbƒv
-        save_dir_path = lines.find{|elem| /^\$SAVE_DATA_DIR.*/ =~ elem}.split("=")[1]   
-        save_dir_path = trim_rbstr(save_dir_path)
-        invoke(ssh, "#{$Cd_cmd} #{@Ddtf_dir_path} ; #{$Comp_tar_cmd} #{@srv_backup_dir_path}save.tar #{save_dir_path}/* ")
-      }
-    end
-    
-    
-    
-
-    # î•ñ˜AŒgƒtƒ@ƒCƒ‹ì¬
-    File.open("#{$Client_work_dir}working.yml" , "w:#{$enc_str}" ) do|f|
-      f.puts "srv_working_dir: #{@srv_working_dir_path}" 
-      f.puts "login_message_file: #{@login_message_file}"
-      f.close
+    # é€£æºæƒ…å ±å–å¾—
+    if proto_flg == "0" then
+      # é€£æºãƒ‡ã‚£ãƒ¬ã‚¯ãƒˆãƒªåå–å¾—
+      $srv_working_dir = YAML.load_file("#{$Client_work_dir}working.yml")["srv_working_dir"]
+    elsif proto_flg == "1" then
+      # ãªã—
     end
 
-    logging("END   : #{self.class.to_s}::#{__method__.to_s}" ,$info)
-  end
-
-
-  # –‘Oˆ—Às(FTP)
-  def pre_ver_up_ftp
-    logging("START : #{self.class.to_s}::#{__method__.to_s}" ,$info)
-
-    # ˆø”‚Ìzip‚ğ‰ğ“€
-    ore_unzip(@new_ddtf_zip , $Client_zip_dir)
-
-    # Œ»s‚ÌƒRƒ“ƒtƒBƒO‚ğæ“¾
-    Net::FTP.open($host, $ftp_user, $ftp_pass) do |ftp|
-      ftp.passive = true
-      ftp.getbinaryfile( "#{@Ddtf_dir_path}src_ruby/config.rb" , "#{$Client_work_dir}01_old_config.rb" )
-      ftp.close
-    end
-
-    # V‚µ‚¢ƒRƒ“ƒtƒBƒO‚Ì—Œ`‚ğŠ’è‚ÌêŠ‚ÉƒRƒs[
-    FileUtils.copy( "#{$Client_zip_dir}#{$Def_ddtf_path}#{$Conf_file_from_ddtf_path}" , "#{$Client_work_dir}01_new_config.rb" )
-
-    logging("END   : #{self.class.to_s}::#{__method__.to_s}" ,$info)
-  end
-
-
-  # ƒo[ƒWƒ‡ƒ“ƒAƒbƒvÀs(SSH)
-  def ver_up_ssh
-    logging("START : #{self.class.to_s}::#{__method__.to_s}" ,$info)
-    
-    
-    # ˜AŒgƒfƒBƒŒƒNƒgƒŠ–¼æ“¾
-    $srv_working_dir = YAML.load_file("#{$Client_work_dir}working.yml")["srv_working_dir"]
-
-    # SCPÚ‘±iVƒRƒ“ƒtƒBƒO‚ğì‹ÆƒtƒHƒ‹ƒ_‚É‘—Mj
-    Net::SCP.start($host, $ssh_user, :password => $ssh_pass) do|scp|
-      channel = scp.upload( "#{$Client_work_dir}01_new_config.rb" , "#{$srv_working_dir}newver/config.rb" )
-      channel.wait
-    end
-
-    # SSHÚ‘±iVŠÂ‹«‚Ì”z’uj
-    Net::SSH.start($host, $ssh_user, :password => $ssh_pass) do |ssh|
-      invoke(ssh, "#{@Cp_cmd_exe} #{$srv_working_dir}newver/#{$Def_ddtf_path}* #{@Ddtf_dir_path}" )
-      invoke(ssh, "#{@Cp_cmd_exe} #{$srv_working_dir}newver/config.rb #{@Ddtf_dir_path}#{$Conf_file_from_ddtf_path}" )
-    end
-    logging("END   : #{self.class.to_s}::#{__method__.to_s}" ,$info)
-  end
-
-
-
-  # ƒo[ƒWƒ‡ƒ“ƒAƒbƒvÀs(ftp)
-  def ver_up_ftp
-    logging("START : #{self.class.to_s}::#{__method__.to_s}" ,$info)
-
-    @file_list = []
-    @dir_list = []
-
-    # Vƒo[ƒWƒ‡ƒ“‚ÌƒfƒBƒŒƒNƒgƒŠ^ƒtƒ@ƒCƒ‹ƒŠƒXƒg‚ğæ“¾
-    Dir.chdir( "#{$Client_zip_dir}#{$Def_ddtf_path}" )
-    Find.find("./") do |f|
-        if File.directory?(f)
-        @dir_list <<   f unless f == "./"
-      else
-        logging("DirName  : #{File.dirname(f)}" , $debug)
-        logging("FileName : #{File.basename(f)}" , $debug)
-        @file_list << {:dir_name =>  File.dirname(f),:file_name => File.basename(f)}
-      end
-    end
-
-    # ’Ç‰ÁƒfƒBƒŒƒNƒgƒŠì¬Aƒtƒ@ƒCƒ‹‘—M
-    if nil == ENV['OCRA_EXECUTABLE'] then 
-      Dir.chdir(File.dirname(__FILE__))
-    else
-      Dir.chdir(File.dirname(ENV['OCRA_EXECUTABLE']))
-    end
-    Net::FTP.open($host,$ftp_user,$ftp_pass) do |ftp|
-      ftp.passive = true
-      ftp.binary = true
-
-      # ƒfƒBƒŒƒNƒgƒŠ‚ª‘¶İ‚µ‚È‚¢ê‡‚Éì¬
-      @dir_list.each do|dir|
-        dir_path = correct_dir(dir.gsub(/^\./, @Ddtf_dir_path ))
-        begin
-          ftp.mkdir(dir_path)
-        rescue
-          logging("this Dir is already exists! : #{dir_path}",$debug)
+    # æ–°ãƒãƒ¼ã‚¸ãƒ§ãƒ³ãƒ•ã‚©ãƒ«ãƒ€æ§‹æˆå–å¾—
+    if proto_flg == "0" then
+      # ç„¡ã—
+    elsif proto_flg == "1" then
+      @file_list = []
+      @dir_list = []
+  
+      # æ–°ãƒãƒ¼ã‚¸ãƒ§ãƒ³ã®ãƒ‡ã‚£ãƒ¬ã‚¯ãƒˆãƒªï¼ãƒ•ã‚¡ã‚¤ãƒ«ãƒªã‚¹ãƒˆã‚’å–å¾—
+      Dir.chdir( "#{$Client_zip_dir}#{$Def_ddtf_path}" )
+      Find.find("./") do |f|
+          if File.directory?(f)
+          @dir_list <<   f unless f == "./"
+        else
+          logging("DirName  : #{File.dirname(f)}" , $debug)
+          logging("FileName : #{File.basename(f)}" , $debug)
+          @file_list << {:dir_name =>  File.dirname(f),:file_name => File.basename(f)}
         end
       end
-
-      # V‹Kƒtƒ@ƒCƒ‹‘—Miã‘‚«j
-      @file_list.each do |file|  
-        src_file_path = correct_dir( "#{$Client_zip_dir}#{file[:dir_name].gsub(/^\./,$Def_ddtf_path)}/#{file[:file_name]}")
-        dst_file_path = correct_dir( "#{file[:dir_name].gsub(/^\./,@Ddtf_dir_path)}/#{file[:file_name]}")
-        logging("ftp_src_file : #{src_file_path}" , $debug)
-        logging(" ->ftp_dst_file : #{dst_file_path}" , $debug)
-        ftp.put( File::expand_path(src_file_path) ,  dst_file_path)
-      end
-      
-      # V‹KƒRƒ“ƒtƒBƒO‘—M
-      ftp.puttextfile( "#{$Client_work_dir}01_new_config.rb" , "#{@Ddtf_dir_path}src_ruby/config.rb" )
-      ftp.close
     end
+
+    # æ–°ç’°å¢ƒæ§‹ç¯‰
+    if proto_flg == "0" then
+
+      # SCPæ¥ç¶šï¼ˆæ–°ã‚³ãƒ³ãƒ•ã‚£ã‚°ã‚’ä½œæ¥­ãƒ•ã‚©ãƒ«ãƒ€ã«é€ä¿¡ï¼‰
+      Net::SCP.start($host, $ssh_user, :password => $ssh_pass) do|scp|
+        channel = scp.upload( "#{$Client_work_dir}01_new_config.rb" , "#{$srv_working_dir}newver/config.rb" )
+        channel.wait
+      end
+  
+      # SSHæ¥ç¶šï¼ˆæ–°ç’°å¢ƒã®é…ç½®ï¼‰
+      Net::SSH.start($host, $ssh_user, :password => $ssh_pass) do |ssh|
+        invoke(ssh, "#{@Cp_cmd_exe} #{$srv_working_dir}newver/#{$Def_ddtf_path}* #{@Ddtf_dir_path}" )
+        invoke(ssh, "#{@Cp_cmd_exe} #{$srv_working_dir}newver/config.rb #{@Ddtf_dir_path}#{$Conf_file_from_ddtf_path}" )
+      end
+    elsif proto_flg == "1" then
+      # è¿½åŠ ãƒ‡ã‚£ãƒ¬ã‚¯ãƒˆãƒªä½œæˆã€ãƒ•ã‚¡ã‚¤ãƒ«é€ä¿¡
+      if nil == ENV['OCRA_EXECUTABLE'] then 
+        Dir.chdir(File.dirname(__FILE__))
+      else
+        Dir.chdir(File.dirname(ENV['OCRA_EXECUTABLE']))
+      end
+      Net::FTP.open($host,$ftp_user,$ftp_pass) do |ftp|
+        ftp.passive = true
+        ftp.binary = true
+  
+        # ãƒ‡ã‚£ãƒ¬ã‚¯ãƒˆãƒªãŒå­˜åœ¨ã—ãªã„å ´åˆã«ä½œæˆ
+        @dir_list.each do|dir|
+          dir_path = correct_dir(dir.gsub(/^\./, @Ddtf_dir_path ))
+          begin
+            ftp.mkdir(dir_path)
+          rescue
+            logging("this Dir is already exists! : #{dir_path}",$debug)
+          end
+        end
+  
+        # æ–°è¦ãƒ•ã‚¡ã‚¤ãƒ«é€ä¿¡ï¼ˆä¸Šæ›¸ãï¼‰
+        @file_list.each do |file|  
+          src_file_path = correct_dir( "#{$Client_zip_dir}#{file[:dir_name].gsub(/^\./,$Def_ddtf_path)}/#{file[:file_name]}")
+          dst_file_path = correct_dir( "#{file[:dir_name].gsub(/^\./,@Ddtf_dir_path)}/#{file[:file_name]}")
+          logging("ftp_src_file : #{src_file_path}" , $debug)
+          logging(" ->ftp_dst_file : #{dst_file_path}" , $debug)
+          ftp.put( File::expand_path(src_file_path) ,  dst_file_path)
+        end
+        
+        # æ–°è¦ã‚³ãƒ³ãƒ•ã‚£ã‚°é€ä¿¡
+        ftp.puttextfile( "#{$Client_work_dir}01_new_config.rb" , "#{@Ddtf_dir_path}src_ruby/config.rb" )
+        ftp.close
+      end
+
+    end
+    
+    
+    # æƒ…å ±é€£æºãƒ•ã‚¡ã‚¤ãƒ«ä½œæˆ
+      open("#{$Client_work_dir}working.yml" , "w:#{$enc_str}" ) do|file|
+        file.write("status: already")
+      end
+
     logging("END   : #{self.class.to_s}::#{__method__.to_s}" ,$info)
   end
 
 
 
 
-  # ƒRƒ“ƒtƒBƒOƒtƒ@ƒCƒ‹C³
+
+
+
+  # ã‚³ãƒ³ãƒ•ã‚£ã‚°ãƒ•ã‚¡ã‚¤ãƒ«ä¿®æ­£
   def make_conf
     logging("START : #{self.class.to_s}::#{__method__.to_s}" ,$info)
   
-    # Vƒo[ƒWƒ‡ƒ“ƒtƒ@ƒCƒ‹‚ğƒŠƒl[ƒ€
+    # æ–°ãƒãƒ¼ã‚¸ãƒ§ãƒ³ãƒ•ã‚¡ã‚¤ãƒ«ã‚’ãƒªãƒãƒ¼ãƒ 
     File.rename( "#{$Client_work_dir}01_new_config.rb" , "#{$Client_work_dir}01_new_config.rb.bak" )
   
-    # oldƒtƒ@ƒCƒ‹‚Ìî•ñ‚ğæ“¾
+    # oldãƒ•ã‚¡ã‚¤ãƒ«ã®æƒ…å ±ã‚’å–å¾—
     old_params = [] 
     open( "#{$Client_work_dir}01_old_config.rb" , "r:#{$enc_str}" ) { |file|
-      # •ÏX‘ÎÛ•Ï”—ñ‚ğæ“¾(versionŠÖ˜AAdiceBotOrderˆÈŠOj
+      # å¤‰æ›´å¯¾è±¡å¤‰æ•°åˆ—ã‚’å–å¾—(versioné–¢é€£ã€diceBotOrderä»¥å¤–ï¼‰
       old_params = file.readlines.select{|elem| /^\$.*/ =~ elem and /^\$versionOnly|^\$versionDate|^\$version|^\$diceBotOrder/ !~ elem}
     }
 
-    # newƒtƒ@ƒCƒ‹‚Æoldƒtƒ@ƒCƒ‹‚ğƒ}[ƒW
+    # newãƒ•ã‚¡ã‚¤ãƒ«ã¨oldãƒ•ã‚¡ã‚¤ãƒ«ã‚’ãƒãƒ¼ã‚¸
     base_str = ""
     open( "#{$Client_work_dir}01_new_config.rb.bak" , "r+b:#{$enc_str}" ) { |file|
       while l = file.gets
@@ -323,15 +338,14 @@ class Main
       end
     }
 
-    # Vnewƒo[ƒWƒ‡ƒ“ƒtƒ@ƒCƒ‹ì¬
+    # æ–°newãƒãƒ¼ã‚¸ãƒ§ãƒ³ãƒ•ã‚¡ã‚¤ãƒ«ä½œæˆ
     open( "#{$Client_work_dir}01_new_config.rb" , "w+b:#{$enc_str}" ) {|file|
       file.write(base_str)
     }
 
     logging("END   : #{self.class.to_s}::#{__method__.to_s}" ,$info)
   end
-  
-  
+
   
 
 

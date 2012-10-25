@@ -1,100 +1,29 @@
 #! ruby -Ku
 # -*- encoding: utf-8 -*-
 
-require 'zip/zipfilesystem'
+require 'baselibs'
 require 'fileutils'
-require 'logger'
-require 'stricts'
-
-$log = Logger.new(STDOUT)
-$log.level = Logger::INFO
+require 'find'
 
 
-# ディレクトリパスの末尾の"/"を確認
-def check_dir(dir_str)
-  correct_dir(dir_str + "/")
-end
+# config現情報解析
+def parse_rbconf(conf_file)
+  result = {}
+  open( conf_file , "r:utf-8" ) { |file|
+    lines = file.readlines
+    # ログインメッセージバックアップ
+    result['login_message_file']  = trim_rbstr(lines.find{|elem| /^\$loginMessageFile.*/ =~ elem}.split("=")[1])
 
-# パス作成時の"/"の重複を削除
-def correct_dir(str)
-  str.gsub(/\/\//, "/")
-end
+    # imageUploadSpaceバックアップ
+    result['img_dir_path'] = trim_rbstr(lines.find{|elem| /^\$imageUploadDir.*/ =~ elem}.split("=")[1])
 
-# 改行コードを削除
-def delete_crlf(str)
-  str.sub(/\n$|\r$|\r\n$/,"")
-end
-
-
-# 命令をsudo形式にして返す
-def make_sudo(pass,com)
-  "yes \'#{pass}\' | sudo -S #{com}"
-end
-
-
-# コマンド実行する
-def invoke(ssh,command)
-  response = ''
-  ssh.exec!(command) do |channel, stream,data|
-    if stream == :stdout
-      logging(data,$debug)
-      response += data
-    elsif stream == :stderr
-      logging(data,$debug)
-    end
-  end
-  response
-end
-
-# コマンド実行する(標準出力を返さない）
-def invoke_nomsg(ssh,command)
-  ssh.exec!(command) do |channel, stream,data|
-    if stream == :stdout
-      logging(data,$debug)
-    elsif stream == :stderr
-      logging(data,$debug)
-    end
-  end
-end
-
-
-# zip解凍
-def ore_unzip(src_path, output_path)
-  output_path = (output_path + "/").sub("//", "/")
-  Zip::ZipInputStream.open(src_path) do |s|
-    while f = s.get_next_entry()
-      d = File.dirname(f.name)
-      FileUtils.makedirs(output_path + d)
-      f =  output_path + f.name
-      unless f.match(/\/$/)
-        logging(f,$debug)
-        File.open(f, "w+b") do |wf|
-          wf.puts(s.read())
-        end
-      end
-    end
-  end
-end
-
-
-# ログ出力
-def logging(str,level)
-  case level
-  when $info
-    $log.info(str)
-  when $warn
-    $log.warn(str)
-  when $debug
-    $log.debug(str)
-  when $error
-    $log.error(str)
-  end
+    # saveDataバックアップ
+    result['save_dir_path'] = trim_rbstr(lines.find{|elem| /^\$SAVE_DATA_DIR.*/ =~ elem}.split("=")[1])
+  }
+  
+  result
 end
 
 
 
-# rbから直にテキストで取得時の文字列トリム
-def trim_rbstr(str)
-  str.gsub(/ |\"|\'|\r\n|\r|\n/,"")
-end
 
