@@ -1,0 +1,48 @@
+### 接続情報 ###
+
+# ホスト（IP・ホスト名）
+host: xxx.xxx.xxx.xxx
+
+# 使用プロトコル(ssh,ftp)
+proto: ssh
+
+
+## SSH設定(proto="ssh"時) ##
+
+# SSHユーザー
+ssh_user: ssh_user
+
+# SSHパスワード
+ssh_pass: ssh_password
+
+# sudo使用有無 有="1" 無="0"
+sudo_flg: 1
+
+# sudoパスワード(sudo_flg="1"時)
+sudo_pass: sudo_password
+
+
+
+## FTP設定(proto="ftp"時) ##
+
+# FTPユーザ
+ftp_user: ftp_user
+
+# FTPパスワード
+ftp_pass: ftp_password
+
+
+
+
+
+## 作業環境（サーバ側のどどんとふ設置環境） ##
+
+# バージョンアップ作業用ディレクトリ（SSH使用時／サーバに無い場合は自動作成）
+work_dir: /home/ssh_user/DodontoFwork
+
+# どどんとふディレクトリ
+ddtf_dir: /var/www/public_html/DodontoF
+
+
+
+
