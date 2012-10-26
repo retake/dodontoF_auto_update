@@ -40,8 +40,22 @@ class Main
       @Cp_cmd_exe = $Cp_cmd
     end
     
+    
+    # protoコマンド修正
+    $ssh = "ssh"
+    $ftp = "ftp"
+
+    $proto_flg = ""
+    case $proto.downcase
+    when "ssh"
+      $proto_flg = $ssh;
+    when "ftp"
+      $proto_flg = $ftp;
+    end
+    
     logging("END   : " + self.class.to_s + "::" + __method__.to_s ,$info)
   end
+
 
 
   # バージョンアップ前段階作業
@@ -65,17 +79,9 @@ class Main
     end
 
 
-    # ssh=0 , ftp=1
-    proto_flg = ""
-    case $proto.downcase
-    when "ssh"
-      proto_flg = "0";
-    when "ftp"
-      proto_flg = "1";
-    end
 
     # サーバ側作業フォルダ作成/バックアップ
-    if proto_flg == "0" then
+    if $proto_flg == $ssh then
       @srv_working_dir_path = ''
       @srv_backup_dir_path = ''
       @srv_newver_dir_path = ''
@@ -98,12 +104,12 @@ class Main
         invoke(ssh, "#{$Comp_tar_cmd} #{@srv_backup_dir_path}dodontoF.tar #{@Ddtf_dir_path}*" )
         invoke(ssh, "#{@Cp_cmd_exe} #{@Ddtf_dir_path}src_ruby/config.rb #{@srv_backup_dir_path}config.rb" )
       end
-    elsif proto_flg == "1" then
+    elsif $proto_flg == $ftp then
       # 無し
     end
 
     # zipファイル展開
-    if proto_flg == "0" then
+    if $proto_flg == $ssh then
       # SCP接続（新バージョンのzipファイルを送信）
       Net::SCP.start($host, $ssh_user, :password => $ssh_pass) do|scp|
         @srv_zip_path =  "#{@srv_newver_dir_path}#{File.basename(@new_ddtf_zip)}"
@@ -115,7 +121,7 @@ class Main
         # zip解凍
         invoke_nomsg(ssh, "#{$Exp_zip_cmd} #{@srv_newver_dir_path} #{@srv_zip_path}" )
       end
-    elsif proto_flg == "1" then
+    elsif $proto_flg == $ftp then
       # クライアントでzipを解凍
       ore_unzip(@new_ddtf_zip , $Client_zip_dir)
     end
@@ -123,7 +129,7 @@ class Main
 
 
     # 新旧コンフィグ準備
-    if proto_flg == "0" then
+    if $proto_flg == $ssh then
       # 新旧コンフィグ取得
       Net::SCP.start($host, $ssh_user, :password => $ssh_pass) do|scp|
         channel = scp.download( "#{@srv_newver_dir_path}#{$Def_ddtf_path}#{$Conf_file_from_ddtf_path}" , "#{$Client_work_dir}01_new_config.rb" )
@@ -131,7 +137,7 @@ class Main
         channel = scp.download( "#{@srv_backup_dir_path}config.rb" , "#{$Client_work_dir}01_old_config.rb" )
         channel.wait
       end
-    elsif proto_flg == "1" then
+    elsif $proto_flg == $ftp then
       # 現行のコンフィグを取得
       Net::FTP.open($host, $ftp_user, $ftp_pass) do |ftp|
         ftp.passive = true
@@ -148,7 +154,7 @@ class Main
 
 
     # その他情報バックアップ
-    if proto_flg == "0" then
+    if $proto_flg == $ssh then
       # SSH接続（ログインメッセージ、uploadImageSpace,saveDataバックアップ）
       Net::SSH.start($host, $ssh_user, :password => $ssh_pass) do |ssh|
         open( "#{$Client_work_dir}01_old_config.rb" , "r:#{$enc_str}" ) { |file|
@@ -160,18 +166,18 @@ class Main
           invoke(ssh, "#{$Cd_cmd} #{@Ddtf_dir_path} ; #{$Comp_tar_cmd} #{@srv_backup_dir_path}save.tar #{rbconf_params['save_dir_path']}/* ")
         }
       end
-    elsif proto_flg == "1" then
+    elsif $proto_flg == $ftp then
       # なし
     end
 
 
     # 引き継ぎ情報取得
-    if proto_flg == "0" then
+    if $proto_flg == $ssh then
       Net::SCP.start($host, $ssh_user, :password => $ssh_pass) do|scp|
         channel = scp.download( "#{@srv_backup_dir_path}#{rbconf_params['login_message_file']}" , "#{$Client_work_dir}#{rbconf_params['login_message_file']}" )
         channel.wait
       end
-    elsif proto_flg == "1" then
+    elsif $proto_flg == $ftp then
       Net::FTP.open($host, $ftp_user, $ftp_pass) do |ftp|
         ftp.passive = true
         ftp.gettextfile( "#{@Ddtf_dir_path}#{rbconf_params['login_message_file']}" , "#{$Client_work_dir}#{rbconf_params['login_message_file']}" )      
@@ -180,20 +186,26 @@ class Main
     end
 
     # 情報連携ファイル作成
-    if proto_flg == "0" then
+    if $proto_flg == $ssh then
       File.open("#{$Client_work_dir}working.yml" , "w:#{$enc_str}" ) do|f|
         f.puts "srv_working_dir: #{@srv_working_dir_path}" 
         f.puts "login_message_file: #{rbconf_params['login_message_file']}"
         f.puts "status: yet"
         f.close
       end
-    elsif proto_flg == "1" then
+    elsif $proto_flg == $ftp then
       File.open("#{$Client_work_dir}working.yml" , "w:#{$enc_str}" ) do|f|
         f.puts "login_message_file: #{rbconf_params['login_message_file']}"
         f.puts "status: yet"
         f.close
       end
     end
+    
+    
+    # コンフィグファイル差分修正
+    make_conf
+    
+
 
     logging("END   : #{self.class.to_s}::#{__method__.to_s}" ,$info)
   end
@@ -203,28 +215,21 @@ class Main
   # バージョンアップ作業
   def ver_up
     logging("START : #{self.class.to_s}::#{__method__.to_s}" ,$info)
-    # ssh=0 , ftp=1
-    proto_flg = ""
-    case $proto.downcase
-    when "ssh"
-      proto_flg = "0";
-    when "ftp"
-      proto_flg = "1";
-    end
+
     
 
     # 連携情報取得
-    if proto_flg == "0" then
+    if $proto_flg == $ssh then
       # 連携ディレクトリ名取得
       $srv_working_dir = YAML.load_file("#{$Client_work_dir}working.yml")["srv_working_dir"]
-    elsif proto_flg == "1" then
+    elsif $proto_flg == $ftp then
       # なし
     end
 
     # 新バージョンフォルダ構成取得
-    if proto_flg == "0" then
+    if $proto_flg == $ssh then
       # 無し
-    elsif proto_flg == "1" then
+    elsif $proto_flg == $ftp then
       @file_list = []
       @dir_list = []
   
@@ -242,7 +247,7 @@ class Main
     end
 
     # 新環境構築
-    if proto_flg == "0" then
+    if $proto_flg == $ssh then
 
       # SCP接続（新コンフィグを作業フォルダに送信）
       Net::SCP.start($host, $ssh_user, :password => $ssh_pass) do|scp|
@@ -255,7 +260,7 @@ class Main
         invoke(ssh, "#{@Cp_cmd_exe} #{$srv_working_dir}newver/#{$Def_ddtf_path}* #{@Ddtf_dir_path}" )
         invoke(ssh, "#{@Cp_cmd_exe} #{$srv_working_dir}newver/config.rb #{@Ddtf_dir_path}#{$Conf_file_from_ddtf_path}" )
       end
-    elsif proto_flg == "1" then
+    elsif $proto_flg == $ftp then
       # 追加ディレクトリ作成、ファイル送信
       if nil == ENV['OCRA_EXECUTABLE'] then 
         Dir.chdir(File.dirname(__FILE__))
