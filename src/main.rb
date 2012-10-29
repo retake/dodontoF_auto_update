@@ -14,6 +14,9 @@ class Main
   require 'stricts'
   require 'yaml'
   require 'libs'
+  require 'nokogiri'
+  require 'open-uri'
+  require 'httpclient'
 
 
   # 初期処理
@@ -63,7 +66,9 @@ class Main
     logging("START : #{self.class.to_s}::#{__method__.to_s}" ,$info)
 
     # どどんとふzipファイル情報取得
-    @new_ddtf_zip = File.expand_path(ARGV[0])
+    #@new_ddtf_zip = File.expand_path(ARGV[0])
+    
+
 
     # 共通処理(クライアント作業ディレクトリ作成）
     begin
@@ -79,6 +84,15 @@ class Main
     end
 
 
+    # どどんとふ最新版ダウンロード
+    doc = Nokogiri::HTML(open('http://www.dodontof.com/DodontoF/newestVersion.html','r:utf-8').read)
+    ddtf_latest_ver_nm = doc.search("a").first["href"].gsub(/^\.\//,"")
+    ddtf_latest_uri =  "http://www.dodontof.com/DodontoF/#{ddtf_latest_ver_nm}"
+    @new_ddtf_zip = File.expand_path("#{$Client_work_dir}#{ddtf_latest_ver_nm}")
+    hc = HTTPClient.new
+    f = File.open(@new_ddtf_zip, "wb")
+      f.print(hc.get_content(ddtf_latest_uri))
+    f.close
 
     # サーバ側作業フォルダ作成/バックアップ
     if $proto_flg == $ssh then

@@ -31,8 +31,8 @@ status =  YAML.load_file("#{$Client_work_dir}working.yml")["status"] if File.exi
 
 if auto_flg == 1 or status == "already" then
   if nil==ARGV[0] then
-    print "新しいどどんとふのzipを指定して下さい"
-    exit
+ #   print "新しいどどんとふのzipを指定して下さい"
+ #   exit
   end
 end
 

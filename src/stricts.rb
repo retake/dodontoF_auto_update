@@ -24,6 +24,7 @@ $Cp_cmd = 'cp -rf'
 $Date = 'date +%Y_%m%d_%H%M%S'
 $Cd_cmd = 'cd'
 $Pwd_cmd = 'pwd'
+$Wget_cmd = 'wget'
 
 # 文字コード
 
