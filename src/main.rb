@@ -18,346 +18,300 @@ class Main
   require 'open-uri'
   require 'httpclient'
 
+  ######################### initialize #########################
 
   # 初期処理
   def initialize(params)
     logging("START : #{self.class.to_s}::#{__method__.to_s}" ,$info)
 
     # パラメータ設定
-    $host = params["host"]
-    $proto = params["proto"]
-    $ssh_user = params["ssh_user"]
-    $ssh_pass = params["ssh_pass"]
-    $sudo_flg = params["sudo_flg"]
-    $sudo_pass = params["sudo_pass"]
-    $ftp_user = params["ftp_user"]
-    $ftp_pass = params["ftp_pass"]
-    @Ddtf_dir_path = check_dir(params["ddtf_dir"])
-    @Work_dir_path = check_dir(params["work_dir"])
+    $Str_param_host = params[$Str_varname_param_host]
+    $Str_param_proto = params[$Str_varname_param_protocol]
+    $Str_param_ssh_user = params[$Str_varname_param_ssh_user]
+    $Str_param_ssh_pass = params[$Str_varname_param_ssh_password]
+    $Flg_param_sudo_use = params[$Str_varname_param_sudo_flg]
+    $Str_param_sudo_pass = params[$Str_varname_param_sudo_password]
+    $Str_param_ftp_user = params[$Str_varname_param_ftp_user]
+    $Str_param_ftp_pass = params[$Str_varname_param_ftp_password]
+    @Str_param_path_dir_dodontof_server = check_dir(params[$Str_varname_param_ddtf_dir])
+    @Str_param_path_dir_working_base_server = check_dir(params[$Str_varname_param_work_dir])
     
      
     # cpコマンド修正(sudo時)
-    if $sudo_flg == 1 then
-      @Cp_cmd_exe = make_sudo($sudo_pass , $Cp_cmd) if $sudo_flg == 1
-    elsif $sudo_flg == 0 then
-      @Cp_cmd_exe = $Cp_cmd
+    if $Flg_param_sudo_use == $Flg_param_sudo_flg_use then
+      @Cmd_cp_fixed = make_sudo($Str_param_sudo_pass , $Cmd_cp) if $Flg_param_sudo_use == $Flg_param_sudo_flg_use
+    elsif $Flg_param_sudo_use == $Flg_param_sudo_flg_nouse then
+      @Cmd_cp_fixed = $Cmd_cp
     end
     
     
     # protoコマンド修正
-    $ssh = "ssh"
-    $ftp = "ftp"
-
-    $proto_flg = ""
-    case $proto.downcase
-    when "ssh"
-      $proto_flg = $ssh;
-    when "ftp"
-      $proto_flg = $ftp;
+    $str_param_proto_flg = ""
+    case $Str_param_proto.downcase
+    when $Str_param_protocol_value_ssh
+      $str_param_proto_flg = $Str_param_protocol_value_ssh
+    when $Str_param_protocol_value_ftp
+      $str_param_proto_flg = $Str_param_protocol_value_ftp
     end
     
     logging("END   : " + self.class.to_s + "::" + __method__.to_s ,$info)
   end
 
 
+  ######################### PRE_UPDATE #########################
 
   # バージョンアップ前段階作業
-  def pre_ver_up
+  def PreUpdate
     logging("START : #{self.class.to_s}::#{__method__.to_s}" ,$info)
 
-    # どどんとふzipファイル情報取得
-    #@new_ddtf_zip = File.expand_path(ARGV[0])
-    
-
-
     # 共通処理(クライアント作業ディレクトリ作成）
-    begin
-      Dir::mkdir($Client_work_dir)
-    rescue Errno::EEXIST
-      logging("\"#{File.expand_path($Client_work_dir)}\" is already exists",$warn)
-    end
-
-    begin
-      Dir::mkdir($Client_zip_dir) if $proto.downcase=="ftp"
-    rescue Errno::EEXIST
-      logging("\"#{File.expand_path($Client_zip_dir)}\" is already exists",$warn)
-    end
-
+    self.MakeClientWorkDir
 
     # どどんとふ最新版ダウンロード
-    doc = Nokogiri::HTML(open('http://www.dodontof.com/DodontoF/newestVersion.html','r:utf-8').read)
-    ddtf_latest_ver_nm = doc.search("a").first["href"].gsub(/^\.\//,"")
-    ddtf_latest_uri =  "http://www.dodontof.com/DodontoF/#{ddtf_latest_ver_nm}"
-    @new_ddtf_zip = File.expand_path("#{$Client_work_dir}#{ddtf_latest_ver_nm}")
-    hc = HTTPClient.new
-    f = File.open(@new_ddtf_zip, "wb")
-      f.print(hc.get_content(ddtf_latest_uri))
-    f.close
+    @path_zip_dodontof_newver_client = self.DownloadNewDodontofZip
 
     # サーバ側作業フォルダ作成/バックアップ
-    if $proto_flg == $ssh then
-      @srv_working_dir_path = ''
-      @srv_backup_dir_path = ''
-      @srv_newver_dir_path = ''
-      @srv_zip_path = ''
+    self.MakeWorkDirOnServer
+    
+    # zipファイル展開
+    self.ExpandNewDodontofZip
 
-      # SSH接続（作業フォルダ作成・バックアップ）
-      Net::SSH.start($host, $ssh_user, :password => $ssh_pass) do |ssh|
-      
-        # 今作業用フォルダを作成
-        @srv_working_dir_path = check_dir(@Work_dir_path + delete_crlf(invoke(ssh , "#{$Date}")))
-        invoke(ssh, "#{$Mkdir_cmd} #{@srv_working_dir_path}" ) 
-        
-        # バックアップ用フォルダ、新バージョン用フォルダを作成
-        @srv_backup_dir_path = "#{@srv_working_dir_path}backup/"
-        @srv_newver_dir_path = "#{@srv_working_dir_path}newver/"
-        invoke(ssh, "#{$Mkdir_cmd} #{@srv_backup_dir_path}" )
-        invoke(ssh, "#{$Mkdir_cmd} #{@srv_newver_dir_path}" )
-        
-        # バックアップ実行(メインディレクトリ、コンフィグ）
-        invoke(ssh, "#{$Comp_tar_cmd} #{@srv_backup_dir_path}dodontoF.tar #{@Ddtf_dir_path}*" )
-        invoke(ssh, "#{@Cp_cmd_exe} #{@Ddtf_dir_path}src_ruby/config.rb #{@srv_backup_dir_path}config.rb" )
-      end
-    elsif $proto_flg == $ftp then
-      # 無し
+    # 新旧コンフィグ準備
+    self.DownloadNewAndExistConfigRb
+
+    # 取得したコンフィグを解析（共通）
+    self.PerseConfigRb
+
+    # その他情報バックアップ
+    self.BackupEtc
+
+    # 引き継ぎ情報取得
+    self.DownloadStatuslink
+
+    # 情報連携ファイル作成
+    self.MakeStatuslinkYml
+
+    # コンフィグファイル差分修正
+    self.MakeConf
+
+    logging("END   : #{self.class.to_s}::#{__method__.to_s}" ,$info)
+  end
+
+
+
+  ######################### PRE_VER_UP_METHOD #########################
+
+  # 共通処理(クライアント作業ディレクトリ作成）
+  def MakeClientWorkDir
+    begin
+      Dir::mkdir($Path_dir_working_client)
+    rescue Errno::EEXIST
+      logging("\"#{File.expand_path($Path_dir_working_client)}\" is already exists",$warn)
     end
 
-    # zipファイル展開
-    if $proto_flg == $ssh then
+    begin
+      Dir::mkdir($Path_dir_zipexpand_client) if $str_param_proto_flg == $Str_param_protocol_value_ftp
+    rescue Errno::EEXIST
+      logging("\"#{File.expand_path($Path_dir_zipexpand_client)}\" is already exists",$warn)
+    end
+  end
+
+
+  # どどんとふ最新版ダウンロード
+  def DownloadNewDodontofZip
+    logging("START : #{self.class.to_s}::#{__method__.to_s}" ,$info)
+    
+    doc = Nokogiri::HTML(open("#{$Uri_base_dodontof_newver}#{$Uri_html_dodontof_newver_from_base}","r:#{$Str_encoding_utf8}").read)
+    filename_zip_dodontof_newver = doc.search("a").first["href"].gsub(/^\.\//,"")
+    uri_zip_dodontof_newver =  "#{$Uri_base_dodontof_newver}#{filename_zip_dodontof_newver}"
+    path_zip_dodontof_newver_client = File.expand_path("#{$Path_dir_working_client}#{filename_zip_dodontof_newver}")
+    hc = HTTPClient.new
+    f = File.open(path_zip_dodontof_newver_client, "wb")
+      f.print(hc.get_content(uri_zip_dodontof_newver))
+    f.close
+    
+    logging("END   : #{self.class.to_s}::#{__method__.to_s}" ,$info)
+    path_zip_dodontof_newver_client
+  end
+
+
+  # サーバ側作業フォルダ作成/バックアップ
+  def MakeWorkDirOnServer
+    logging("START : #{self.class.to_s}::#{__method__.to_s}" ,$info)
+    if $str_param_proto_flg == $Str_param_protocol_value_ssh then
+      @path_dir_working_server = ''
+      @path_dir_backup_server = ''
+      @path_dir_dodontof_newver_server = ''
+      @path_zip_dodontof_newver_server = ''
+
+      # SSH接続（作業フォルダ作成・バックアップ）
+      Net::SSH.start($Str_param_host, $Str_param_ssh_user, :password => $Str_param_ssh_pass) do |ssh|
+      
+        # 今回作業用フォルダを作成
+        @path_dir_working_server = check_dir(@Str_param_path_dir_working_base_server + delete_crlf(invoke(ssh , "#{$Cmd_date}")))
+        invoke(ssh, "#{$Cmd_mkdir} #{@path_dir_working_server}" ) 
+        
+        # バックアップ用フォルダ、新バージョン用フォルダを作成
+        @path_dir_backup_server = "#{@path_dir_working_server}#{$Path_dir_backup_from_backup_base}"
+        @path_dir_dodontof_newver_server = "#{@path_dir_working_server}#{$Path_dir_newver_from_backup_base}"
+        invoke(ssh, "#{$Cmd_mkdir} #{@path_dir_backup_server}" )
+        invoke(ssh, "#{$Cmd_mkdir} #{@path_dir_dodontof_newver_server}" )
+        
+        # バックアップ実行(メインディレクトリ、コンフィグ）
+        invoke(ssh, "#{$Cmd_tar_comp} #{@path_dir_backup_server}#{$Filename_tar_backup_dodontof} #{@Str_param_path_dir_dodontof_server}*" )
+        invoke(ssh, "#{@Cmd_cp_fixed} #{@Str_param_path_dir_dodontof_server}#{$Path_rb_config_from_dodontof_dir} #{@path_dir_backup_server}#{$Filename_rb_config_default}" )
+      end
+    elsif $str_param_proto_flg == $Str_param_protocol_value_ftp then
+      # 無し
+    end
+    logging("END   : #{self.class.to_s}::#{__method__.to_s}" ,$info)
+  end
+
+  # zipファイル展開
+  def ExpandNewDodontofZip
+    logging("START : #{self.class.to_s}::#{__method__.to_s}" ,$info)
+    if $str_param_proto_flg == $Str_param_protocol_value_ssh then
       # SCP接続（新バージョンのzipファイルを送信）
-      Net::SCP.start($host, $ssh_user, :password => $ssh_pass) do|scp|
-        @srv_zip_path =  "#{@srv_newver_dir_path}#{File.basename(@new_ddtf_zip)}"
-        channel = scp.upload(@new_ddtf_zip , @srv_zip_path )
+      Net::SCP.start($Str_param_host, $Str_param_ssh_user, :password => $Str_param_ssh_pass) do|scp|
+        @path_zip_dodontof_newver_server =  "#{@path_dir_dodontof_newver_server}#{File.basename(@path_zip_dodontof_newver_client)}"
+        channel = scp.upload(@path_zip_dodontof_newver_client , @path_zip_dodontof_newver_server )
         channel.wait
       end
       # SSH接続（zip解凍）
-      Net::SSH.start($host, $ssh_user, :password => $ssh_pass) do |ssh|
+      Net::SSH.start($Str_param_host, $Str_param_ssh_user, :password => $Str_param_ssh_pass) do |ssh|
         # zip解凍
-        invoke_nomsg(ssh, "#{$Exp_zip_cmd} #{@srv_newver_dir_path} #{@srv_zip_path}" )
+        invoke_nomsg(ssh, "#{$Cmd_zip_exp} #{@path_dir_dodontof_newver_server} #{@path_zip_dodontof_newver_server}" )
       end
-    elsif $proto_flg == $ftp then
+    elsif $str_param_proto_flg == $Str_param_protocol_value_ftp then
       # クライアントでzipを解凍
-      ore_unzip(@new_ddtf_zip , $Client_zip_dir)
+      ore_unzip(@path_zip_dodontof_newver_client , $Path_dir_zipexpand_client)
     end
+    logging("END   : #{self.class.to_s}::#{__method__.to_s}" ,$info)
+  end
 
-
-
-    # 新旧コンフィグ準備
-    if $proto_flg == $ssh then
+  # 新旧コンフィグ準備
+  def DownloadNewAndExistConfigRb
+    logging("START : #{self.class.to_s}::#{__method__.to_s}" ,$debug)
+    if $str_param_proto_flg == $Str_param_protocol_value_ssh then
       # 新旧コンフィグ取得
-      Net::SCP.start($host, $ssh_user, :password => $ssh_pass) do|scp|
-        channel = scp.download( "#{@srv_newver_dir_path}#{$Def_ddtf_path}#{$Conf_file_from_ddtf_path}" , "#{$Client_work_dir}01_new_config.rb" )
+      Net::SCP.start($Str_param_host, $Str_param_ssh_user, :password => $Str_param_ssh_pass) do|scp|
+        channel = scp.download( "#{@path_dir_dodontof_newver_server}#{$Path_dir_dodontof_default}#{$Path_rb_config_from_dodontof_dir}" , "#{$Path_dir_working_client}#{$Filename_rb_config_newver_client}" )
         channel.wait
-        channel = scp.download( "#{@srv_backup_dir_path}config.rb" , "#{$Client_work_dir}01_old_config.rb" )
+        channel = scp.download( "#{@path_dir_backup_server}config.rb" , "#{$Path_dir_working_client}#{$Filename_rb_config_existing_client}" )
         channel.wait
       end
-    elsif $proto_flg == $ftp then
+    elsif $str_param_proto_flg == $Str_param_protocol_value_ftp then
       # 現行のコンフィグを取得
-      Net::FTP.open($host, $ftp_user, $ftp_pass) do |ftp|
+      Net::FTP.open($Str_param_host, $Str_param_ftp_user, $Str_param_ftp_pass) do |ftp|
         ftp.passive = true
-        ftp.getbinaryfile( "#{@Ddtf_dir_path}src_ruby/config.rb" , "#{$Client_work_dir}01_old_config.rb" )      
+        ftp.getbinaryfile( "#{@Str_param_path_dir_dodontof_server}#{$Path_rb_config_from_dodontof_dir}" , "#{$Path_dir_working_client}#{$Filename_rb_config_existing_client}" )      
         ftp.close
       end
       # 新コンフィグの雛形をコピー
-      FileUtils.copy( "#{$Client_zip_dir}#{$Def_ddtf_path}#{$Conf_file_from_ddtf_path}" , "#{$Client_work_dir}01_new_config.rb" )
+      FileUtils.copy( "#{$Path_dir_zipexpand_client}#{$Path_dir_dodontof_default}#{$Path_rb_config_from_dodontof_dir}" , "#{$Path_dir_working_client}#{$Filename_rb_config_newver_client}" )
     end
+    logging("END   : #{self.class.to_s}::#{__method__.to_s}" ,$debug)
+  end
+  
+  
 
+  # 取得したコンフィグを解析（共通）
+  def PerseConfigRb
+    logging("START : #{self.class.to_s}::#{__method__.to_s}" ,$debug)
+    rbconf_params = parse_rbconf("#{$Path_dir_working_client}#{$Filename_rb_config_existing_client}")
+    
+    @str_rbparam_filename_loginmessagefile = rbconf_params[$Str_varname_rb_config_loginmessagefile]
+    @str_rbparam_dir_imagedirpath = rbconf_params[$Str_varname_rb_config_imagedirpath]
+    @str_rbparam_dir_savedirpath = rbconf_params[$Str_varname_rb_config_savedirpath]
+    logging("END   : #{self.class.to_s}::#{__method__.to_s}" ,$debug)
+  end
+  
+  
 
-    # 取得したコンフィグを解析（共通）
-    rbconf_params = parse_rbconf("#{$Client_work_dir}01_old_config.rb")
-
-
-    # その他情報バックアップ
-    if $proto_flg == $ssh then
+  # その他情報バックアップ
+  def BackupEtc
+    logging("START : #{self.class.to_s}::#{__method__.to_s}" ,$debug)
+    if $str_param_proto_flg == $Str_param_protocol_value_ssh then
       # SSH接続（ログインメッセージ、uploadImageSpace,saveDataバックアップ）
-      Net::SSH.start($host, $ssh_user, :password => $ssh_pass) do |ssh|
-        open( "#{$Client_work_dir}01_old_config.rb" , "r:#{$enc_str}" ) { |file|
+      Net::SSH.start($Str_param_host, $Str_param_ssh_user, :password => $Str_param_ssh_pass) do |ssh|
+        open( "#{$Path_dir_working_client}#{$Filename_rb_config_existing_client}" , "r:#{$Str_encoding_utf8}" ) { |file|
           # ログインメッセージバックアップ
-          invoke(ssh, "#{@Cp_cmd_exe} #{@Ddtf_dir_path}#{rbconf_params['login_message_file']} #{@srv_backup_dir_path}#{rbconf_params['login_message_file']}" )
+          invoke(ssh, "#{@Cmd_cp_fixed} #{@Str_param_path_dir_dodontof_server}#{@str_rbparam_filename_loginmessagefile} #{@path_dir_backup_server}#{@str_rbparam_filename_loginmessagefile}" )
           # imageUploadSpaceバックアップ
-          invoke(ssh, "#{$Cd_cmd} #{@Ddtf_dir_path} ; #{$Comp_tar_cmd} #{@srv_backup_dir_path}img.tar #{rbconf_params['img_dir_path']}/* ")
+          invoke(ssh, "#{$Cmd_cd} #{@Str_param_path_dir_dodontof_server} ; #{$Cmd_tar_comp} #{@path_dir_backup_server}#{$Filename_tar_backup_imageuploadspace} #{@str_rbparam_dir_imagedirpath}/* ")
           # saveDataバックアップ
-          invoke(ssh, "#{$Cd_cmd} #{@Ddtf_dir_path} ; #{$Comp_tar_cmd} #{@srv_backup_dir_path}save.tar #{rbconf_params['save_dir_path']}/* ")
+          invoke(ssh, "#{$Cmd_cd} #{@Str_param_path_dir_dodontof_server} ; #{$Cmd_tar_comp} #{@path_dir_backup_server}#{$Filename_tar_backup_save} #{@str_rbparam_dir_savedirpath}/* ")
         }
       end
-    elsif $proto_flg == $ftp then
+    elsif $str_param_proto_flg == $Str_param_protocol_value_ftp then
       # なし
     end
-
-
-    # 引き継ぎ情報取得
-    if $proto_flg == $ssh then
-      Net::SCP.start($host, $ssh_user, :password => $ssh_pass) do|scp|
-        channel = scp.download( "#{@srv_backup_dir_path}#{rbconf_params['login_message_file']}" , "#{$Client_work_dir}01_new_login_message.html" )
-        channel.wait
-      end
-    elsif $proto_flg == $ftp then
-      Net::FTP.open($host, $ftp_user, $ftp_pass) do |ftp|
-        ftp.passive = true
-        ftp.gettextfile( "#{@Ddtf_dir_path}#{rbconf_params['login_message_file']}" , "#{$Client_work_dir}01_new_login_message.html" )      
-        ftp.close
-      end
-    end
-
-    # 情報連携ファイル作成
-    if $proto_flg == $ssh then
-      File.open("#{$Client_work_dir}working.yml" , "w:#{$enc_str}" ) do|f|
-        f.puts "srv_working_dir: #{@srv_working_dir_path}" 
-        f.puts "login_message_file: #{rbconf_params['login_message_file']}"
-        f.puts "status: yet"
-        f.close
-      end
-    elsif $proto_flg == $ftp then
-      File.open("#{$Client_work_dir}working.yml" , "w:#{$enc_str}" ) do|f|
-        f.puts "login_message_file: #{rbconf_params['login_message_file']}"
-        f.puts "status: yet"
-        f.close
-      end
-    end
-    
-    
-    # コンフィグファイル差分修正
-    make_conf
-    
-
-
-    logging("END   : #{self.class.to_s}::#{__method__.to_s}" ,$info)
+    logging("END   : #{self.class.to_s}::#{__method__.to_s}" ,$debug)
   end
 
 
 
-  # バージョンアップ作業
-  def ver_up
-    logging("START : #{self.class.to_s}::#{__method__.to_s}" ,$info)
-
-    
-    # 連携情報取得
-    status_params = YAML.load_file("#{$Client_work_dir}working.yml")
-    if $proto_flg == $ssh then
-      # 連携ディレクトリ名取得
-      $srv_working_dir = status_params["srv_working_dir"]    
-    elsif $proto_flg == $ftp then
-      # なし
-    end
-    # ログインメッセージファイル名取得
-    $login_message_file = status_params["login_message_file"]
-
-
-    # 新バージョンフォルダ構成取得
-    if $proto_flg == $ssh then
-      # 無し
-    elsif $proto_flg == $ftp then
-      @file_list = []
-      @dir_list = []
-  
-      # 新バージョンのディレクトリ／ファイルリストを取得
-      Dir.chdir( "#{$Client_zip_dir}#{$Def_ddtf_path}" )
-      Find.find("./") do |f|
-          if File.directory?(f)
-          @dir_list <<   f unless f == "./"
-        else
-          logging("DirName  : #{File.dirname(f)}" , $debug)
-          logging("FileName : #{File.basename(f)}" , $debug)
-          @file_list << {:dir_name =>  File.dirname(f),:file_name => File.basename(f)}
-        end
-      end
-    end
-
-
-    # 新環境構築
-    if $proto_flg == $ssh then
-
-      # SCP接続（新コンフィグ・ログインメッセージを作業フォルダに送信）
-      Net::SCP.start($host, $ssh_user, :password => $ssh_pass) do|scp|
-        channel = scp.upload( "#{$Client_work_dir}01_new_config.rb" , "#{$srv_working_dir}newver/config.rb" )
-        channel.wait
-        channel = scp.upload( "#{$Client_work_dir}01_new_login_message.html" , "#{$srv_working_dir}newver/#{$login_message_file}" )
+  # 引き継ぎ情報取得
+  def DownloadStatuslink
+    logging("START : #{self.class.to_s}::#{__method__.to_s}" ,$debug)
+    if $str_param_proto_flg == $Str_param_protocol_value_ssh then
+      Net::SCP.start($Str_param_host, $Str_param_ssh_user, :password => $Str_param_ssh_pass) do|scp|
+        channel = scp.download( "#{@path_dir_backup_server}#{@str_rbparam_filename_loginmessagefile}" , "#{$Path_dir_working_client}#{$Filename_html_loginmessage_client}" )
         channel.wait
       end
-  
-      # SSH接続（新環境の配置）
-      Net::SSH.start($host, $ssh_user, :password => $ssh_pass) do |ssh|
-        invoke(ssh, "#{@Cp_cmd_exe} #{$srv_working_dir}newver/#{$Def_ddtf_path}* #{@Ddtf_dir_path}" )
-        invoke(ssh, "#{@Cp_cmd_exe} #{$srv_working_dir}newver/config.rb #{@Ddtf_dir_path}#{$Conf_file_from_ddtf_path}" )
-        invoke(ssh, "#{@Cp_cmd_exe} #{$srv_working_dir}newver/#{$login_message_file} #{@Ddtf_dir_path}#{$login_message_file}" )
-
-      end
-    elsif $proto_flg == $ftp then
-      # 追加ディレクトリ作成、ファイル送信
-      if nil == ENV['OCRA_EXECUTABLE'] then 
-        Dir.chdir(File.dirname(__FILE__))
-      else
-        Dir.chdir(File.dirname(ENV['OCRA_EXECUTABLE']))
-      end
-      Net::FTP.open($host,$ftp_user,$ftp_pass) do |ftp|
+    elsif $str_param_proto_flg == $Str_param_protocol_value_ftp then
+      Net::FTP.open($Str_param_host, $Str_param_ftp_user, $Str_param_ftp_pass) do |ftp|
         ftp.passive = true
-        ftp.binary = true
-  
-        # ディレクトリが存在しない場合に作成
-        @dir_list.each do|dir|
-          dir_path = correct_dir(dir.gsub(/^\./, @Ddtf_dir_path ))
-          begin
-            ftp.mkdir(dir_path)
-          rescue
-            logging("this Dir is already exists! : #{dir_path}",$debug)
-          end
-        end
-  
-        # 新規ファイル送信（上書き）
-        @file_list.each do |file|  
-          src_file_path = correct_dir( "#{$Client_zip_dir}#{file[:dir_name].gsub(/^\./,$Def_ddtf_path)}/#{file[:file_name]}")
-          dst_file_path = correct_dir( "#{file[:dir_name].gsub(/^\./,@Ddtf_dir_path)}/#{file[:file_name]}")
-          logging("ftp_src_file : #{src_file_path}" , $debug)
-          logging(" ->ftp_dst_file : #{dst_file_path}" , $debug)
-          ftp.put( File::expand_path(src_file_path) ,  dst_file_path)
-        end
-        
-        # 新規コンフィグ送信
-        ftp.puttextfile( "#{$Client_work_dir}01_new_config.rb" , "#{@Ddtf_dir_path}src_ruby/config.rb" )
-        # ログインメッセージ引き継ぎ
-        ftp.puttextfile( "#{$Client_work_dir}01_new_login_message.html" , "#{@Ddtf_dir_path}#{$login_message_file}" )
+        ftp.gettextfile( "#{@Str_param_path_dir_dodontof_server}#{@str_rbparam_filename_loginmessagefile}" , "#{$Path_dir_working_client}#{$Filename_html_loginmessage_client}" )      
         ftp.close
       end
-
     end
-    
-    
-    # 情報連携ファイル作成
-    open("#{$Client_work_dir}working.yml" , "w:#{$enc_str}" ) do|file|
-      file.write("status: already")
-    end
-
-
-    # 連携用ローカルフォルダ削除
-    rmdir_all($Client_work_dir)
-
-
-    logging("END   : #{self.class.to_s}::#{__method__.to_s}" ,$info)
+    logging("END   : #{self.class.to_s}::#{__method__.to_s}" ,$debug)
   end
+    
+    
 
 
-
+  # 情報連携ファイル作成
+  def MakeStatuslinkYml
+    logging("START : #{self.class.to_s}::#{__method__.to_s}" ,$debug)
+    if $str_param_proto_flg == $Str_param_protocol_value_ssh then
+      File.open("#{$Path_dir_working_client}working.yml" , "w:#{$Str_encoding_utf8}" ) do|f|
+        f.puts "#{$Str_statuslink_varname_dir_working}: #{@path_dir_working_server}" 
+        f.puts "#{$Str_statuslink_varname_filename_loginmessage}: #{@str_rbparam_filename_loginmessagefile}"
+        f.puts "#{$Str_statuslink_varname_status}: #{$Str_updatestatus_yet}"
+        f.close
+      end
+    elsif $str_param_proto_flg == $Str_param_protocol_value_ftp then
+      File.open("#{$Path_dir_working_client}working.yml" , "w:#{$Str_encoding_utf8}" ) do|f|
+        f.puts "#{$Str_statuslink_varname_filename_loginmessage}: #{@str_rbparam_filename_loginmessagefile}"
+        f.puts "#{$Str_statuslink_varname_status}: #{$Str_updatestatus_yet}"
+        f.close
+      end
+    end
+    logging("END   : #{self.class.to_s}::#{__method__.to_s}" ,$debug)
+  end
 
 
 
 
   # コンフィグファイル修正
-  def make_conf
+  def MakeConf
     logging("START : #{self.class.to_s}::#{__method__.to_s}" ,$info)
   
     # 新バージョンファイルをリネーム
-    File.rename( "#{$Client_work_dir}01_new_config.rb" , "#{$Client_work_dir}01_new_config.rb.bak" )
+    File.rename( "#{$Path_dir_working_client}#{$Filename_rb_config_newver_client}" , "#{$Path_dir_working_client}#{$Filename_rb_config_existing_backup}" )
   
     # oldファイルの情報を取得
     old_params = [] 
-    open( "#{$Client_work_dir}01_old_config.rb" , "r:#{$enc_str}" ) { |file|
+    open( "#{$Path_dir_working_client}#{$Filename_rb_config_existing_client}" , "r:#{$Str_encoding_utf8}" ) { |file|
       # 変更対象変数列を取得(version関連、diceBotOrder以外）
       old_params = file.readlines.select{|elem| /^\$.*/ =~ elem and /^\$versionOnly|^\$versionDate|^\$version|^\$diceBotOrder/ !~ elem}
     }
 
     # newファイルとoldファイルをマージ
     base_str = ""
-    open( "#{$Client_work_dir}01_new_config.rb.bak" , "r+b:#{$enc_str}" ) { |file|
+    open( "#{$Path_dir_working_client}#{$Filename_rb_config_existing_backup}" , "r+b:#{$Str_encoding_utf8}" ) { |file|
       while l = file.gets
         flg = true
         old_params.each do |old_param|
@@ -373,7 +327,7 @@ class Main
     }
 
     # 新newバージョンファイル作成
-    open( "#{$Client_work_dir}01_new_config.rb" , "w+b:#{$enc_str}" ) {|file|
+    open( "#{$Path_dir_working_client}#{$Filename_rb_config_newver_client}" , "w+b:#{$Str_encoding_utf8}" ) {|file|
       file.write(base_str)
     }
 
@@ -382,5 +336,144 @@ class Main
 
   
 
+  ######################### UPDATE #########################
 
+  # バージョンアップ作業
+  def Update
+    logging("START : #{self.class.to_s}::#{__method__.to_s}" ,$info)
+
+    
+    # 連携情報取得
+    self.PerseStatuslink
+    
+    # 新バージョンフォルダ構成取得
+    self.GetNewverDirTree
+    
+
+    # 新環境構築
+    self.BuildNewVer    
+    
+    # 情報連携ファイル作成（一応）
+    self.MakeStatuslinkYml_post
+    
+
+    # 連携用ローカルフォルダ削除
+    rmdir_all($Path_dir_working_client)
+
+    logging("END   : #{self.class.to_s}::#{__method__.to_s}" ,$info)
+  end
+
+    
+  ######################### VER_UP_METHOD #########################
+    
+  # 連携情報取得
+  def PerseStatuslink
+    logging("START : #{self.class.to_s}::#{__method__.to_s}" ,$debug)
+    status_params = YAML.load_file($Path_yml_statuslink_clinet)
+    if $str_param_proto_flg == $Str_param_protocol_value_ssh then
+      # 連携ディレクトリ名取得
+      $srv_working_dir = status_params[$Str_statuslink_varname_dir_working]    
+    elsif $str_param_proto_flg == $Str_param_protocol_value_ftp then
+      # なし
+    end
+    # ログインメッセージファイル名取得
+    $str_statuslink_filename_html_loginmessage = status_params[$Str_statuslink_varname_filename_loginmessage]
+    logging("END   : #{self.class.to_s}::#{__method__.to_s}" ,$debug)
+  end
+
+
+
+  # 新バージョンフォルダ構成取得
+  def GetNewverDirTree
+    logging("START : #{self.class.to_s}::#{__method__.to_s}" ,$debug)
+    if $str_param_proto_flg == $Str_param_protocol_value_ssh then
+      # 無し
+    elsif $str_param_proto_flg == $Str_param_protocol_value_ftp then
+      @List_path_files_dodontof_new_ver = []
+      @List_path_dirs_dodontof_new_ver = []
+  
+      # 新バージョンのディレクトリ／ファイルリストを取得
+      Dir.chdir( "#{$Path_dir_zipexpand_client}#{$Path_dir_dodontof_default}" )
+      Find.find("./") do |f|
+        if File.directory?(f) then
+          @List_path_dirs_dodontof_new_ver <<   f unless f == "./"
+        else
+          logging("DirName  : #{File.dirname(f)}" , $debug)
+          logging("FileName : #{File.basename(f)}" , $debug)
+          @List_path_files_dodontof_new_ver << {:dir_name =>  File.dirname(f),:file_name => File.basename(f)}
+        end
+      end
+    end
+    logging("END   : #{self.class.to_s}::#{__method__.to_s}" ,$debug)
+  end
+    
+
+
+  # 新環境構築
+  def BuildNewVer
+    logging("START : #{self.class.to_s}::#{__method__.to_s}" ,$debug)
+    if $str_param_proto_flg == $Str_param_protocol_value_ssh then
+
+      # SCP接続（新コンフィグ・ログインメッセージを作業フォルダに送信）
+      Net::SCP.start($Str_param_host, $Str_param_ssh_user, :password => $Str_param_ssh_pass) do|scp|
+        channel = scp.upload( "#{$Path_dir_working_client}#{$Filename_rb_config_newver_client}" , "#{$srv_working_dir}#{$Path_dir_newver_from_backup_base}#{$Filename_rb_config_default}" )
+        channel.wait
+        channel = scp.upload( "#{$Path_dir_working_client}#{$Filename_html_loginmessage_client}" , "#{$srv_working_dir}newver/#{$str_statuslink_filename_html_loginmessage}" )
+        channel.wait
+      end
+      
+      # SSH接続（新環境の配置）
+      Net::SSH.start($Str_param_host, $Str_param_ssh_user, :password => $Str_param_ssh_pass) do |ssh|
+        invoke(ssh, "#{@Cmd_cp_fixed} #{$srv_working_dir}newver/#{$Path_dir_dodontof_default}* #{@Str_param_path_dir_dodontof_server}" )
+        invoke(ssh, "#{@Cmd_cp_fixed} #{$srv_working_dir}newver/config.rb #{@Str_param_path_dir_dodontof_server}#{$Path_rb_config_from_dodontof_dir}" )
+        invoke(ssh, "#{@Cmd_cp_fixed} #{$srv_working_dir}newver/#{$str_statuslink_filename_html_loginmessage} #{@Str_param_path_dir_dodontof_server}#{$str_statuslink_filename_html_loginmessage}" )
+      end
+    elsif $str_param_proto_flg == $Str_param_protocol_value_ftp then
+      # 追加ディレクトリ作成、ファイル送信
+      if nil == ENV[$Str_env_path_exefile_ocra] then 
+        Dir.chdir(File.dirname(__FILE__))
+      else
+        Dir.chdir(File.dirname(ENV[$Str_env_path_exefile_ocra]))
+      end
+      Net::FTP.open($Str_param_host,$Str_param_ftp_user,$Str_param_ftp_pass) do |ftp|
+        ftp.passive = true
+        ftp.binary = true
+
+        # ディレクトリが存在しない場合に作成
+        @List_path_dirs_dodontof_new_ver.each do|dir|
+          path_dir_target_make_newver = correct_dir(dir.gsub(/^\./, @Str_param_path_dir_dodontof_server ))
+          begin
+            ftp.mkdir(path_dir_target_make_newver)
+          rescue
+            logging("this Dir is already exists! : #{path_dir_target_make_newver}",$debug)
+          end
+        end
+        # 新規ファイル送信（上書き）
+        @List_path_files_dodontof_new_ver.each do |file|  
+          path_file_src_put_newver = correct_dir( "#{$Path_dir_zipexpand_client}#{file[:dir_name].gsub(/^\./,$Path_dir_dodontof_default)}/#{file[:file_name]}")
+          path_file_dst_put_newver = correct_dir( "#{file[:dir_name].gsub(/^\./,@Str_param_path_dir_dodontof_server)}/#{file[:file_name]}")
+          logging("ftp_src_file : #{path_file_src_put_newver}" , $debug)
+          logging(" ->ftp_dst_file : #{path_file_dst_put_newver}" , $debug)
+          ftp.put( File::expand_path(path_file_src_put_newver) ,  path_file_dst_put_newver)
+        end
+        
+        # 新規コンフィグ送信
+        ftp.puttextfile( "#{$Path_dir_working_client}#{$Filename_rb_config_newver_client}" , "#{@Str_param_path_dir_dodontof_server}#{$Path_rb_config_from_dodontof_dir}" )
+        # ログインメッセージ引き継ぎ
+        ftp.puttextfile( "#{$Path_dir_working_client}#{$Filename_html_loginmessage_client}" , "#{@Str_param_path_dir_dodontof_server}#{$str_statuslink_filename_html_loginmessage}" )
+        ftp.close
+      end
+    end
+    logging("END   : #{self.class.to_s}::#{__method__.to_s}" ,$debug)
+  end
+    
+  # 情報連携ファイル作成（一応）
+  def MakeStatuslinkYml_post
+    logging("START : #{self.class.to_s}::#{__method__.to_s}" ,$debug)
+    open("#{$Path_dir_working_client}working.yml" , "w:#{$Str_encoding_utf8}" ) do|file|
+      file.write("status: already")
+    end
+    logging("END   : #{self.class.to_s}::#{__method__.to_s}" ,$debug)
+  end
+    
 end
