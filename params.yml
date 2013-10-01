@@ -1,12 +1,11 @@
 
-
 ############### 接続情報 ###############
 
 # ホスト（IP・ホスト名）
-host: xxx.xxx.xxx.xxx
+host: garekisai.sakura.ne.jp
 
 # 使用プロトコル(ssh,ftp)
-proto: ssh
+proto: ftp
 
 
 ########################################
@@ -39,10 +38,10 @@ sudo_pass: sudo_password
 ######## FTP設定(proto="ftp"時) ########
 
 # FTPユーザ
-ftp_user: ftp_user
+ftp_user: garekisai
 
 # FTPパスワード
-ftp_pass: ftp_password
+ftp_pass: s9wp48zp4p
 
 
 ########################################
@@ -56,7 +55,7 @@ ftp_pass: ftp_password
 work_dir: /home/ssh_user/DodontoFwork
 
 # どどんとふディレクトリ
-ddtf_dir: /var/www/public_html/DodontoF
+ddtf_dir: /home/garekisai/www/DodontoF
 
 
 ########################################
