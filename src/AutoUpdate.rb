@@ -20,10 +20,10 @@ end
 
 
 
-# 初期化
+# パラメータを取り込む
 params = YAML.load_file("./params.yml")
 
-# オートフラグ
+# オートフラグ確認
 auto_flg = params["full_auto_flg"]
 # 連携有無
 status = ""
