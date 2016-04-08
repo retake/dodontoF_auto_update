@@ -39,10 +39,10 @@ sudo_pass: sudo_password
 ######## FTP設定(proto="ftp"時) ########
 
 # FTPユーザ
-ftp_user: ftp_user
+ftp_user: kiri011450
 
 # FTPパスワード
-ftp_pass: ftp_password
+ftp_pass: 011450sososo
 
 
 ########################################
